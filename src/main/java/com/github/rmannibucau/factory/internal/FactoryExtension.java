@@ -11,22 +11,23 @@ import javax.enterprise.context.Dependent;
 import javax.enterprise.context.spi.CreationalContext;
 import javax.enterprise.event.Observes;
 import javax.enterprise.inject.spi.AfterBeanDiscovery;
-import javax.enterprise.inject.spi.AnnotatedField;
 import javax.enterprise.inject.spi.Bean;
 import javax.enterprise.inject.spi.BeanManager;
 import javax.enterprise.inject.spi.Extension;
-import javax.enterprise.inject.spi.ProcessAnnotatedType;
+import javax.enterprise.inject.spi.InjectionPoint;
+import javax.enterprise.inject.spi.ProcessBean;
 import java.io.Serializable;
+import java.lang.reflect.Type;
 import java.util.HashSet;
 import java.util.Set;
 
 public class FactoryExtension implements Extension {
-    private final Set<Class<?>> neededTypes = new HashSet<Class<?>>();
+    private final Set<Type> neededTypes = new HashSet<Type>();
 
-    <T> void findTypes(final @Observes ProcessAnnotatedType<T> pat) {
-        for (final AnnotatedField<? super T> field : pat.getAnnotatedType().getFields()) {
-            if (field.getAnnotation(Factory.class) != null) {
-                neededTypes.add(field.getJavaMember().getType());
+    <T> void findTypes(final @Observes ProcessBean<T> pat) {
+        for (final InjectionPoint field : pat.getBean().getInjectionPoints()) {
+            if (field.getAnnotated().isAnnotationPresent(Factory.class)) {
+                neededTypes.add(field.getType());
             }
         }
     }
@@ -36,10 +37,11 @@ public class FactoryExtension implements Extension {
             return;
         }
 
-        for (final Class<?> c : neededTypes) {
+        for (final Type c : neededTypes) {
+            final Class clazz = Class.class.cast(c);
             final Bean<Object> bean = new BeanBuilder<Object>(bm)
-                    .passivationCapable(Serializable.class.isAssignableFrom(c))
-                    .beanClass(c)
+                    .passivationCapable(Serializable.class.isAssignableFrom(clazz))
+                    .beanClass(clazz)
                     .scope(Dependent.class)
                     .types(Object.class, c)
                     .qualifiers(new AnyLiteral(), FactoryQualifier.QUALIFIER)
@@ -49,7 +51,7 @@ public class FactoryExtension implements Extension {
 
                         @Override
                         public Object create(final Bean<Object> bean, final CreationalContext<Object> creationalContext) {
-                            return BeanProvider.getContextualReference(InstanceFactory.class).instance(c);
+                            return BeanProvider.getContextualReference(InstanceFactory.class).instance(clazz);
                         }
 
                         @Override
